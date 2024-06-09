@@ -1,19 +1,12 @@
-import openai
+from flask import Flask, request, jsonify
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+from openai import OpenAI
 import os
-import requests
 
-# OpenAI API 클라이언트 설정
-client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+app = Flask(__name__)
 
-# 외부 스토리지에서 임베딩 파일 다운로드
-def download_embeddings():
-    url = os.getenv('EMBEDDINGS_URL')  # 외부 스토리지 서비스의 파일 URL
-    response = requests.get(url)
-    with open('/tmp/video_embeddings.npy', 'wb') as f:
-        f.write(response.content)
-    return np.load('/tmp/video_embeddings.npy', allow_pickle=True).item()
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 def get_embeddings(text_list):
     embeddings = []
@@ -26,21 +19,24 @@ def get_embeddings(text_list):
         embeddings.append(response_data['data'][0]['embedding'])
     return embeddings
 
-def search_similar_videos(query, data, top_k=5):
-    # 쿼리 문장을 임베딩
+def load_embeddings(file_path):
+    return np.load(file_path, allow_pickle=True).item()
+
+def search_similar_videos(query, data, top_k=10):
     query_embedding = get_embeddings([query])[0]
-    # 코사인 유사도 계산
     similarities = cosine_similarity([query_embedding], data["embeddings"])[0]
-    # 유사도가 높은 순서대로 정렬
     top_results = np.argsort(-similarities)[:top_k]
     return [(data["titles"][idx], data["links"][idx], similarities[idx]) for idx in top_results]
 
-# 임베딩 파일 다운로드 및 로드
-data = download_embeddings()
+data = load_embeddings('video_embeddings.npy')
 
-# 예제 유사도 검색
-query = "Learn Python"
-results = search_similar_videos(query, data)
+@app.route('/search', methods=['POST'])
+def search():
+    content = request.json
+    query = content.get('query')
+    top_k = content.get('top_k', 10)
+    results = search_similar_videos(query, data, top_k=top_k)
+    return jsonify(results)
 
-for result in results:
-    print(f"Title: {result[0]}, Link: {result[1]}, Similarity: {result[2]:.4f}")
+if __name__ == '__main__':
+    app.run()
