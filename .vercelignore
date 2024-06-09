@@ -1,0 +1,5 @@
+# .vercelignore
+node_modules
+video_embeddings.npy
+*.log
+*.tmp
